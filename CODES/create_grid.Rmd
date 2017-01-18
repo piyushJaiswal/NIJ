@@ -1,0 +1,119 @@
+---
+title: "Create Grid covering the Portland District"
+output: html_notebook
+---
+
+```{r}
+library(data.table)
+library(shapefiles)
+library(rgeos)
+library(sp)
+library(mgcv)
+library(raster)
+```
+
+```{r grid_sample_submission}
+sample_shp = read.shp(shp.name = "../SUBMISSION/NAME/ACFS/1MO/NAME_ACFS_1MO.shp")
+
+# Create a list of SpatialPolygons Object containing all the polygons
+s_polygons <- lapply(1:length(sample_shp$shp), function(x){
+  pls = Polygons(list(Polygon(sample_shp$shp[[x]]$points)),x)
+  return(pls)
+})
+s_polygons <- SpatialPolygons(s_polygons,proj4string = CRS("+init=epsg:2913"))
+save(s_polygons,file="../DERIVED/grids_SpatialPolygons.Rdata")
+```
+
+```{r aggregate_data_gridlevel}
+years = c(2012,2013,2014,2015)
+
+panel <- data.table()
+for(y in years){
+  cat(y,"\n")
+  filepath = paste0("../RAW/",y,"/")
+  filenames <- list.files(path=filepath,pattern = "*.csv",full.names = T)
+  df <- fread(input = filenames)
+  df$grid <- 0
+  pts <- matrix(c(df$x_coordinate,df$y_coordinate),ncol=2)
+
+  Sys.time()
+  for(i in 1:length(s_polygons)){
+    if(i%%1000==0){
+      print(paste0(i,"_",Sys.time()))
+    }
+    pls <- s_polygons@polygons[[i]]@Polygons[[1]]@coords
+    ind <- in.out(pls,pts)
+    df$grid[ind==T]=i
+  }
+  Sys.time()
+  save(df,file = paste0("../DERIVED/NIJ",y,"_grid#_added.Rdata"))
+  panel <- rbind(panel,df)
+}
+xy <- data.table(grid=1:length(s_polygons@polygons), centroid_x = coordinates(s_polygons)[,1], centroid_y = coordinates(s_polygons)[,2])
+panel <- merge(panel, xy, by="grid",all.x=T)
+save(panel,file="../DERIVED/NIJ2012-2015_grid#_added.Rdata")
+```
+
+```{r density_map}
+years = c(2012,2013,2014,2015)
+load("../DERIVED/grids_SpatialPolygons.Rdata")
+s_polygons = spTransform(s_polygons, CRS("+init=epsg:4326"))
+# Annual
+for(y in years){
+  load(paste0("../DERIVED/NIJ",y,"_grid#_added.Rdata"))
+  crime_occur <- df[,list(n=.N),by="grid"]
+  crime_occur_allgrid <- data.table(grid=1:67372)
+  crime_occur_allgrid <- merge(crime_occur_allgrid,crime_occur,by="grid",all.x=T)
+  crime_occur_allgrid[is.na(crime_occur_allgrid)] = 0
+  
+  r <- raster(ncol=180, nrow=180)
+  extent(r) <- extent(s_polygons)
+  rp <- rasterize(s_polygons, r, crime_occur_allgrid$n)
+  png(filename = paste0("../DERIVED/HeatMap_#crimes/Annual/annual_",y,"_#crimes.png"), width=1000, height=1000)
+  plot(rp)
+  dev.off()
+}
+
+# Monthly
+for(y in years){
+  load(paste0("../DERIVED/NIJ",y,"_grid#_added.Rdata"))
+  df[,month:=month(occ_date)]
+  crime_occur <- df[,list(n=.N),by=c("grid","month")]
+  for(m in 1:12){
+    crime_occur_allgrid <- data.table(grid=1:67372, month=m)
+    crime_occur_allgrid <- merge(crime_occur_allgrid,crime_occur[month==m,],by="grid",all.x=T)
+    crime_occur_allgrid[is.na(crime_occur_allgrid)] = 0
+    
+    r <- raster(ncol=180, nrow=180)
+    extent(r) <- extent(s_polygons)
+    rp <- rasterize(s_polygons, r, crime_occur_allgrid$n)
+    png(filename = paste0("../DERIVED/HeatMap_#crimes/Monthly/Monthly_",m,"_#crimes.png"), width=1000, height=1000)
+    plot(rp)
+    dev.off()
+  }
+
+}
+
+# Daily
+load("../DERIVED/grids_SpatialPolygons.Rdata")
+load("../DERIVED/grids_info.Rdata")
+setorder(grids,"grid")
+s_polygons = spTransform(s_polygons, CRS("+init=epsg:4326"))
+load("../DERIVED/PANELS/panel_master_streetcrime_14_15.Rdata")
+setorder(panel_SC,"grid","occ_date")
+d = unique(panel_SC$occ_date)
+var <- "target_28"
+r <- raster(ncol=180, nrow=180)
+extent(r) <- extent(s_polygons)
+for(i in 1:700){
+  
+  df <- panel_SC[occ_date==d[i], c("grid",var), with=F]
+  setorder(df,"grid")
+  
+  rp <- rasterize(grids[,c(2,3),with=F], r, df[,get(var)])
+  png(filename = paste0("../DERIVED/HeatMap_#crimes/Daily/",d[i],".png"), width=800, height=800)
+  plot(rp)
+  dev.off()
+}
+```
+

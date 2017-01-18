@@ -1,0 +1,90 @@
+---
+title: "Explore Shape Files"
+output: html_notebook
+---
+
+```{r read_shp_file}
+library(data.table)
+library(shapefiles)
+
+file_shp = read.shp(shp.name = "../RAW/2015/NIJ2015_JAN01_DEC31.shp")
+
+names(file_shp)
+class(file_shp$shp); class(file_shp$header)
+names(file_shp$header)
+
+shp_matrix = data.table(file_shp$shp)
+head(shp_matrix)
+summary(shp_matrix)
+
+file_shp$header
+```
+
+```{r read_dbf_file}
+file_shx = read.shx(shx.name = "../RAW/2015/NIJ2015_JAN01_DEC31.shx")
+
+names(file_shx)
+class(file_shx$index); class(file_shx$header)
+names(file_shx$header)
+
+shx_matrix = data.table(file_shx$index)
+head(shx_matrix)
+summary(shx_matrix)
+dim(shx_matrix)
+
+file_shx$header
+```
+
+```{r read_shx_file}
+file_dbf = read.dbf(dbf.name = "../RAW/2015/NIJ2015_JAN01_DEC31.dbf")
+
+names(file_dbf)
+class(file_dbf$dbf); class(file_dbf$header)
+head(file_dbf$header)
+
+dbf_matrix = data.table(file_dbf$dbf)
+head(dbf_matrix)
+
+summary(dbf_matrix)
+dim(dbf_matrix)
+```
+
+```{r sample_submission}
+# DBF file
+file1 = read.dbf(dbf.name = "../SUBMISSION/NAME/ACFS/1MO/NAME_ACFS_1MO.dbf") 
+names(file1)
+head(file1$dbf)
+head(file1$header)
+dim(file1$dbf)
+
+summary(file1$dbf)
+table(file1$dbf[,"hotspot"])
+
+file1 = data.table(file1$dbf)
+file1$area_miles = file1$area*3.587e-08
+sum(file1[,area_miles]); sum(file1[hotspot==1,area])
+
+# SHP file
+file2 = read.shp(shp.name = "../SUBMISSION/NAME/ACFS/1MO/NAME_ACFS_1MO.shp") 
+names(file2)
+length(file2)
+head(file2$header)
+class(file2$shp)
+length(file2$shp)
+
+# SHX file
+file3 = read.shx(shx.name = "../SUBMISSION/NAME/ACFS/1MO/NAME_ACFS_1MO.shx")
+class(file3)
+names(file3)
+class(file3$index); class(file3$header);
+
+file3 <- data.table(file3$index)
+dim(file3)
+head(file3)
+summary(file3)
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).

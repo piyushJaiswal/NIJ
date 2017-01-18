@@ -1,0 +1,120 @@
+---
+title: "Construct Portland City boundary"
+output: html_notebook
+---
+
+```{r read_Portland_district_shapefiles}
+library(data.table)
+library(shapefiles)
+library(ggplot2)
+library(geosphere)
+
+files_districts <- read.shapefile("../RAW/Portland_Police_Districts")
+shp_districts <- files_districts$shp$shp
+length(shp_districts)
+
+points_districts <- rbindlist(lapply(shp_districts,function(x) return (x$points)))
+plot(points_districts,cex=0.1)
+points_districts = unique(points_districts)
+
+# Get the enclosing polyline
+points_districts$quad_1 = 0; points_districts$quad_2 = 0;
+points_districts$quad_3 = 0; points_districts$quad_4 = 0;
+for(i in 1:nrow(points_districts)){
+  x = points_districts[i,X]; y = points_districts[i,Y];
+  # find the % of points in the 1st quadrant
+  n = length(which(points_districts[-i,X]>x & points_districts[-i,Y]>y))/nrow(points_districts)
+  points_districts$quad_1[i] = n
+  # find the % of points in the 2nd quadrant
+  n = length(which(points_districts[-i,X]<x & points_districts[-i,Y]>y))/nrow(points_districts)
+  points_districts$quad_2[i] = n
+  # find the % of points in the 3rd quadrant
+  n = length(which(points_districts[-i,X]<x & points_districts[-i,Y]<y))/nrow(points_districts)
+  points_districts$quad_3[i] = n
+  # find the % of points in the 4th quadrant
+  n = length(which(points_districts[-i,X]>x & points_districts[-i,Y]<y))/nrow(points_districts)
+  points_districts$quad_4[i] = n
+}
+indxs <- which(points_districts$quad_1<=0 | points_districts$quad_2<=0.001 | points_districts$quad_3<=0.045 | points_districts$quad_4<=0.018)
+points_boundary <- points_districts[indxs,c("X","Y"),with=F]
+
+# Plot the uncleant boundary
+ggplot(data=points_boundary,aes(x=X,y=Y)) + scale_x_continuous(name ="X", breaks=seq(7600000,7700000,5000)) + geom_point(size=0.001) + scale_y_continuous(name ="Y", breaks=seq(650000,740000,5000)) + geom_point(size=0.001) + theme(text = element_text(size=9),axis.text.x = element_text(angle=90, hjust=1))
+
+# Cleaning the boundaries
+points_boundary <- subset(points_boundary,!(X>=7617500 & X<=7620000 & Y>=715000 & Y<=717500))
+points_boundary <- subset(points_boundary,!(X>=7616500 & X<=7623000 & Y>=697000 & Y<=702000))
+points_boundary <- subset(points_boundary,!(X>=7626000 & X<=7635000 & Y>=667000 & Y<=669000))
+points_boundary <- subset(points_boundary,!(X>=7620000 & X<=7627500 & Y>=688000 & Y<=697000))
+points_boundary <- subset(points_boundary,!(X>=7632000 & X<=7640000 & Y>=654000 & Y<=665000))
+points_boundary <- subset(points_boundary,!(X>=7625000 & X<=7627500 & Y>=663500 & Y<=665000))
+points_boundary <- subset(points_boundary,!(X>=7625000 & X<=7627500 & Y>=663500 & Y<=665000))
+points_boundary <- subset(points_boundary,!(X>=7687500 & X<=7693000 & Y>=675000 & Y<=677000))
+points_boundary <- subset(points_boundary,!(X>=7685000 & X<=7691000 & Y>=665100 & Y<=670000))
+
+points_boundary$quad_1 = 0; points_boundary$quad_2 = 0;
+points_boundary$quad_3 = 0; points_boundary$quad_4 = 0;
+for(i in 1:nrow(points_boundary)){
+  x = points_boundary[i,X]; y = points_boundary[i,Y];
+  # find the % of points in the 1st quadrant
+  n = length(which(points_boundary[-i,X]>x & points_boundary[-i,Y]>y))/nrow(points_boundary)
+  points_boundary$quad_1[i] = n
+  # find the % of points in the 2nd quadrant
+  n = length(which(points_boundary[-i,X]<x & points_boundary[-i,Y]>y))/nrow(points_boundary)
+  points_boundary$quad_2[i] = n
+  # find the % of points in the 3rd quadrant
+  n = length(which(points_boundary[-i,X]<x & points_boundary[-i,Y]<y))/nrow(points_boundary)
+  points_boundary$quad_3[i] = n
+  # find the % of points in the 4th quadrant
+  n = length(which(points_boundary[-i,X]>x & points_boundary[-i,Y]<y))/nrow(points_boundary)
+  points_boundary$quad_4[i] = n
+}
+indxs <- which(points_boundary$quad_1<=0 | points_boundary$quad_2<=0.001 | points_boundary$quad_3<=0.001 | points_boundary$quad_4<=0.001)
+points_boundary2 <- points_boundary[indxs,c("X","Y"),with=F]
+
+# Plot the cleant boundary
+ggplot(data=points_boundary2,aes(x=X,y=Y)) + scale_x_continuous(name ="X", breaks=seq(7600000,7700000,5000)) + geom_point(size=0.001) + scale_y_continuous(name ="Y", breaks=seq(650000,740000,5000)) + geom_point(size=0.001) + theme(text = element_text(size=9),axis.text.x = element_text(angle=90, hjust=1))
+
+# Get the area of the cleant boundary
+df_sp <- SpatialPointsDataFrame(coords = points_boundary2,data=points_boundary2)
+proj4string(df_sp) <- CRS("+init=epsg:2913")
+df_sp <- spTransform(df_sp, CRS("+init=epsg:4326"))
+
+points_boundary3 <- data.table(x=df_sp$X,y=df_sp$Y)
+x_c <-(max(points_boundary3$x)+min(points_boundary3$x))/2
+y_c <- (max(points_boundary3$y)+min(points_boundary3$y))/2
+x_pts <- points_boundary3$x - x_c
+y_pts <- points_boundary3$y - y_c
+angles <- atan2(y_pts,x_pts)
+points_boundary3 <- points_boundary3[order(angles),]
+aa = areaPolygon(points_boundary3)
+```
+
+```{r create_raster_obj}
+p <- shapefile(x="../RAW/Portland_Police_Districts.shp")
+x <- raster(ncol=36, nrow=18, xmn=min(points_boundary2$X), xmx=max(points_boundary2$X), ymn=min(points_boundary2$Y), ymx=max(points_boundary2$Y), crs="+init=epsg:2913")
+projection(x) <- "+init=epsg:4326"
+values(x) <- 1:ncell(x)
+
+rb = crop(x,p)
+r <- raster(nrow=45, ncol=90)
+r[] <- 1:ncell(r)
+e <- extent(-160, 10, 30, 60)
+rc <- crop(r, e)
+# use row and column numbers:
+rc2 <- crop(r, extent(r, 5, 10, 7, 15))
+# crop Raster* with Spatial* object
+b <- as(extent(6, 6.4, 49.75, 50), 'SpatialPolygons')
+crs(b) <- crs(r)
+rb <- crop(r, b)
+
+r <- raster(nrow=18, ncol=36)
+r[] <- runif(ncell(r)) * 10
+r[r>8] <- NA
+p <- rasterToPoints(r)
+p <- rasterToPoints(r, fun=function(x){x>6})
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
